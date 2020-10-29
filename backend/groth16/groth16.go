@@ -94,6 +94,27 @@ func Prove(r1cs r1cs.R1CS, pk ProvingKey, solution interface{}) (Proof, error) {
 	}
 }
 
+// ProveUnsafe generate a groth16.Proof, without catching error if the system is not solved.
+// Therefore the multi exponentiation is performed no matter what.
+func ProveUnsafe(r1cs r1cs.R1CS, pk ProvingKey, solution interface{}) (Proof, error) {
+	_solution, err := frontend.ParseWitness(solution)
+	if err != nil {
+		return nil, err
+	}
+	switch _r1cs := r1cs.(type) {
+	case *backend_bls377.R1CS:
+		return groth16_bls377.ProveUnsafe(_r1cs, pk.(*groth16_bls377.ProvingKey), _solution)
+	case *backend_bls381.R1CS:
+		return groth16_bls381.ProveUnsafe(_r1cs, pk.(*groth16_bls381.ProvingKey), _solution)
+	case *backend_bn256.R1CS:
+		return groth16_bn256.ProveUnsafe(_r1cs, pk.(*groth16_bn256.ProvingKey), _solution)
+	case *backend_bw761.R1CS:
+		return groth16_bw761.ProveUnsafe(_r1cs, pk.(*groth16_bw761.ProvingKey), _solution)
+	default:
+		panic("unrecognized R1CS curve type")
+	}
+}
+
 // Setup runs groth16.Setup with provided R1CS
 func Setup(r1cs r1cs.R1CS) (ProvingKey, VerifyingKey) {
 
