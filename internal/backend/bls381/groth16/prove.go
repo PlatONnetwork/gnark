@@ -218,6 +218,7 @@ func ProveUnsafe(r1cs *bls381backend.R1CS, pk *ProvingKey, solution map[string]i
 	b := make([]fr.Element, r1cs.NbConstraints, pk.Domain.Cardinality)
 	c := make([]fr.Element, r1cs.NbConstraints, pk.Domain.Cardinality)
 	wireValues := make([]fr.Element, r1cs.NbWires)
+	r1cs.Solve(solution, a, b, c, wireValues)
 
 	// set the wire values in regular form
 	utils.Parallelize(len(wireValues), func(start, end int) {
