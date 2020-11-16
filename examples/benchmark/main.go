@@ -12,6 +12,7 @@ import (
 	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/backend/r1cs"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/std/hash/mimc"
 	"github.com/consensys/gurvy"
 	bls381fr "github.com/consensys/gurvy/bls381/fr"
 	bn256fr "github.com/consensys/gurvy/bn256/fr"
@@ -19,7 +20,7 @@ import (
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Println("usage is ./benchmark [nbConstraints list]")
+		fmt.Println("usage is ./benchmark [nbHashes list]")
 		os.Exit(-1)
 	}
 	ns := strings.Split(os.Args[1], ",")
@@ -44,7 +45,7 @@ func main() {
 			// measure proving time
 			start := time.Now()
 			// p := profile.Start(profile.TraceProfile, profile.ProfilePath("."), profile.NoShutdownHook)
-			_, _ = groth16.Prove(r1cs, pk, &input)
+			_, _ = groth16.ProveUnsafe(r1cs, pk, &input)
 			// p.Stop()
 
 			took := time.Since(start)
@@ -55,6 +56,7 @@ func main() {
 
 			bData := benchData{
 				Curve:          curveID.String(),
+				NbHashes:       n,
 				NbCores:        runtime.NumCPU(),
 				NbCoefficients: r1cs.GetNbCoefficients(),
 				NbConstraints:  r1cs.GetNbConstraints(),
@@ -74,24 +76,36 @@ func main() {
 
 }
 
-// benchCircuit is a simple circuit that checks X*X*X*X*X... == Y
+// // benchCircuit is a simple circuit that checks X*X*X*X*X... == Y
+// type benchCircuit struct {
+// 	X frontend.Variable
+// 	Y frontend.Variable `gnark:",public"`
+// 	n int
+// }
+
 type benchCircuit struct {
-	X frontend.Variable
-	Y frontend.Variable `gnark:",public"`
-	n int
+	ExpectedResult []frontend.Variable `gnark:"ExpectedHash,public"`
+	Data           []frontend.Variable
+	n              int // nb hashes
 }
 
 func (circuit *benchCircuit) Define(curveID gurvy.ID, cs *frontend.ConstraintSystem) error {
-	for i := 0; i < circuit.n; i++ {
-		circuit.X = cs.Mul(circuit.X, circuit.X)
+	mimc, err := mimc.NewMiMC("seed", curveID)
+	if err != nil {
+		return err
 	}
-	cs.AssertIsEqual(circuit.X, circuit.Y)
+	for i := 0; i < circuit.n; i++ {
+		result := mimc.Hash(cs, circuit.Data[i])
+		cs.AssertIsEqual(result, circuit.ExpectedResult[i])
+	}
 	return nil
 }
 
-func generateCircuit(nbConstraints int, curveID gurvy.ID) (groth16.ProvingKey, r1cs.R1CS) {
+func generateCircuit(nbHashes int, curveID gurvy.ID) (groth16.ProvingKey, r1cs.R1CS) {
 	var circuit benchCircuit
-	circuit.n = nbConstraints
+	circuit.n = nbHashes
+	circuit.ExpectedResult = make([]frontend.Variable, nbHashes)
+	circuit.Data = make([]frontend.Variable, nbHashes)
 
 	r1cs, err := frontend.Compile(curveID, &circuit)
 	if err != nil {
@@ -103,29 +117,30 @@ func generateCircuit(nbConstraints int, curveID gurvy.ID) (groth16.ProvingKey, r
 	return pk, r1cs
 }
 
-func generateSolution(nbConstraints int, curveID gurvy.ID) (witness benchCircuit) {
-	witness.n = nbConstraints
-	witness.X.Assign(2)
+func generateSolution(nbHashes int, curveID gurvy.ID) (witness benchCircuit) {
+	witness.n = nbHashes
+	witness.ExpectedResult = make([]frontend.Variable, nbHashes)
+	witness.Data = make([]frontend.Variable, nbHashes)
 
 	switch curveID {
 	case gurvy.BN256:
-		// compute expected Y
-		var expectedY bn256fr.Element
-		expectedY.SetInterface(2)
-		for i := 0; i < nbConstraints; i++ {
-			expectedY.MulAssign(&expectedY)
-		}
+		var sample bn256fr.Element
 
-		witness.Y.Assign(expectedY)
+		for j := 0; j < nbHashes; j++ {
+			sample.SetRandom() // so the multi exp is not trivial
+			witness.ExpectedResult[j].Assign(sample)
+			sample.SetRandom()
+			witness.Data[j].Assign(sample)
+		}
 	case gurvy.BLS381:
-		// compute expected Y
-		var expectedY bls381fr.Element
-		expectedY.SetInterface(2)
-		for i := 0; i < nbConstraints; i++ {
-			expectedY.MulAssign(&expectedY)
-		}
+		var sample bls381fr.Element
 
-		witness.Y.Assign(expectedY)
+		for j := 0; j < nbHashes; j++ {
+			sample.SetRandom() // so the multi exp is not trivial
+			witness.ExpectedResult[j].Assign(sample)
+			sample.SetRandom()
+			witness.Data[j].Assign(sample)
+		}
 	default:
 		panic("not implemented")
 	}
@@ -135,6 +150,7 @@ func generateSolution(nbConstraints int, curveID gurvy.ID) (witness benchCircuit
 
 type benchData struct {
 	Curve             string
+	NbHashes          int
 	NbConstraints     int
 	NbWires           int
 	NbCoefficients    int
@@ -146,11 +162,12 @@ type benchData struct {
 }
 
 func (bData benchData) headers() []string {
-	return []string{"curve", "nbConstraints", "nbWires", "nbCoefficients", "ram(mb)", "time(ms)", "nbCores", "throughput(constraints/s)", "througputPerCore(constraints/s)"}
+	return []string{"curve", "nbHashes", "nbConstraints", "nbWires", "nbCoefficients", "ram(mb)", "time(ms)", "nbCores", "throughput(constraints/s)", "througputPerCore(constraints/s)"}
 }
 func (bData benchData) values() []string {
 	return []string{
 		bData.Curve,
+		strconv.Itoa(bData.NbHashes),
 		strconv.Itoa(bData.NbConstraints),
 		strconv.Itoa(bData.NbWires),
 		strconv.Itoa(bData.NbCoefficients),
