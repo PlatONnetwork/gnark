@@ -70,6 +70,7 @@ type VerifyingKey interface {
 	SizePublicWitness() int // number of elements expected in the public witness
 	IsDifferent(interface{}) bool
 	ExportSolidity(w io.Writer) error
+	ExportWasm(w io.Writer) error
 }
 
 // Verify runs the groth16.Verify algorithm on provided proof with given witness
