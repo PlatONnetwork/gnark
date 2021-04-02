@@ -106,3 +106,19 @@ func (vk *VerifyingKey) ExportSolidity(w io.Writer) error {
 	// execute template
 	return tmpl.Execute(w, vk)
 }
+
+func (vk *VerifyingKey) ExportWasm(w io.Writer) error {
+	helpers := template.FuncMap{
+		"sub": func(a, b int) int {
+			return a - b
+		},
+	}
+
+	tmpl, err := template.New("").Funcs(helpers).Parse(wasmTemplate)
+	if err != nil {
+		return err
+	}
+
+	// execute template
+	return tmpl.Execute(w, vk)
+}

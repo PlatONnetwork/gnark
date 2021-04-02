@@ -89,3 +89,7 @@ func Verify(proof *Proof, vk *VerifyingKey, publicWitness bw761witness.Witness) 
 func (vk *VerifyingKey) ExportSolidity(w io.Writer) error {
 	return errors.New("not implemented")
 }
+
+func (vk *VerifyingKey) ExportWasm(w io.Writer) error {
+	return errors.New("not implemented")
+}
